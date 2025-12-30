@@ -1,6 +1,6 @@
 # Work & Hobby Tracker
 
-A simple **static HTML-based Work & Hobby Tracker**.
+A simple **static HTML , CSS and JAVASCRIPT based  Work & Hobby Tracker**.
 
 ## Features
 - Track work and hobby tasks
