@@ -1,1207 +1,1218 @@
-// script.js
-document.addEventListener('DOMContentLoaded', function() {
-    // ======================
-    // STATE MANAGEMENT
-    // ======================
-    const state = {
-        user: null,
-        sessionActive: false,
-        timerInterval: null,
-        timerRemaining: 0,
-        timerDuration: 1500, // 25 minutes in seconds
-        isTimerRunning: false,
-        platforms: {},
-        sessions: [],
-        achievements: [],
-        streaks: {
-            overall: 0,
-            leetcode: 0,
-            tryhackme: 0,
-            calendar: []
-        },
-        weeklyProgress: {
-            labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-            points: [0, 0, 0, 0, 0, 0, 0]
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeFlow Pro - Professional Coding Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --secondary: #8b5cf6;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --info: #3b82f6;
         }
-    };
-
-    // ======================
-    // INITIALIZATION
-    // ======================
-    function init() {
-        // Check if user is already logged in
-        const savedUser = localStorage.getItem('codeflow_user');
-        if (savedUser) {
-            state.user = JSON.parse(savedUser);
-            loadUserData();
-            showDashboard();
-        } else {
-            showWelcomeModal();
-        }
-
-        // Initialize event listeners
-        setupEventListeners();
-        // Initialize charts
-        initCharts();
-        // Generate sample data for demo
-        generateDemoData();
-    }
-
-    // ======================
-    // AUTHENTICATION
-    // ======================
-    function login() {
-        const email = document.getElementById('loginEmail').value;
-        const password = document.getElementById('loginPassword').value;
-
-        if (!email || !password) {
-            showNotification('Please fill in all fields', 'error');
-            return;
-        }
-
-        // Simulate API call
-        const users = JSON.parse(localStorage.getItem('codeflow_users') || '[]');
-        const user = users.find(u => u.email === email && u.password === password);
-
-        if (user) {
-            state.user = user;
-            localStorage.setItem('codeflow_user', JSON.stringify(user));
-            loadUserData();
-            showDashboard();
-            showNotification('Login successful!', 'success');
-            triggerConfetti();
-        } else {
-            showNotification('Invalid credentials', 'error');
-        }
-    }
-
-    function register() {
-        const firstName = document.getElementById('registerFirstName').value;
-        const lastName = document.getElementById('registerLastName').value;
-        const email = document.getElementById('registerEmail').value;
-        const password = document.getElementById('registerPassword').value;
-        const confirmPassword = document.getElementById('registerConfirmPassword').value;
-        const acceptTerms = document.getElementById('acceptTerms').checked;
-
-        if (!firstName || !lastName || !email || !password || !confirmPassword) {
-            showNotification('Please fill in all fields', 'error');
-            return;
-        }
-
-        if (password.length < 8) {
-            showNotification('Password must be at least 8 characters', 'error');
-            return;
-        }
-
-        if (password !== confirmPassword) {
-            showNotification('Passwords do not match', 'error');
-            return;
-        }
-
-        if (!acceptTerms) {
-            showNotification('Please accept terms and conditions', 'error');
-            return;
-        }
-
-        // Check if user already exists
-        const users = JSON.parse(localStorage.getItem('codeflow_users') || '[]');
-        if (users.some(u => u.email === email)) {
-            showNotification('User already exists', 'error');
-            return;
-        }
-
-        // Create new user
-        const newUser = {
-            id: Date.now(),
-            firstName,
-            lastName,
-            email,
-            password, // In real app, hash this!
-            points: 100,
-            level: 1,
-            platforms: {},
-            createdAt: new Date().toISOString()
-        };
-
-        users.push(newUser);
-        localStorage.setItem('codeflow_users', JSON.stringify(users));
-        localStorage.setItem('codeflow_user', JSON.stringify(newUser));
-
-        state.user = newUser;
-        loadUserData();
-        showDashboard();
-        showNotification('Account created successfully!', 'success');
-        triggerConfetti();
-    }
-
-    function logout() {
-        state.user = null;
-        localStorage.removeItem('codeflow_user');
-        showAuthScreen();
-        showNotification('Logged out successfully', 'success');
-    }
-
-    function switchAuthTab(tab) {
-        const loginForm = document.getElementById('loginForm');
-        const registerForm = document.getElementById('registerForm');
-        const loginTabBtn = document.getElementById('loginTabBtn');
-        const registerTabBtn = document.getElementById('registerTabBtn');
-
-        if (tab === 'login') {
-            loginForm.classList.remove('hidden');
-            registerForm.classList.add('hidden');
-            loginTabBtn.classList.add('tab-active');
-            loginTabBtn.classList.remove('text-gray-400');
-            registerTabBtn.classList.remove('tab-active');
-            registerTabBtn.classList.add('text-gray-400');
-        } else {
-            registerForm.classList.remove('hidden');
-            loginForm.classList.add('hidden');
-            registerTabBtn.classList.add('tab-active');
-            registerTabBtn.classList.remove('text-gray-400');
-            loginTabBtn.classList.remove('tab-active');
-            loginTabBtn.classList.add('text-gray-400');
-        }
-    }
-
-    // ======================
-    // PLATFORM INTEGRATION
-    // ======================
-    function connectPlatform(platform) {
-        const inputId = `${platform}Username`;
-        const username = document.getElementById(inputId).value.trim();
-
-        if (!username) {
-            showNotification(`Please enter ${platform} username`, 'error');
-            return;
-        }
-
-        // Save platform data
-        state.user.platforms[platform] = { username, connectedAt: new Date().toISOString() };
-        localStorage.setItem('codeflow_user', JSON.stringify(state.user));
-
-        // Update UI
-        updatePlatformDisplay(platform, username);
-        showNotification(`${platform} connected successfully!`, 'success');
-
-        // Fetch platform data (simulated)
-        fetchPlatformData(platform, username);
-    }
-
-    function saveAllPlatforms() {
-        const platforms = ['github', 'leetcode', 'tryhackme', 'codeforces'];
-        let connectedCount = 0;
-
-        platforms.forEach(platform => {
-            const inputId = `${platform}Username`;
-            const input = document.getElementById(inputId);
-            if (input && input.value.trim()) {
-                connectPlatform(platform);
-                connectedCount++;
-            }
-        });
-
-        if (connectedCount > 0) {
-            showNotification(`Connected ${connectedCount} platform(s)`, 'success');
-            closePlatformModal();
-        } else {
-            showNotification('No platforms connected', 'warning');
-        }
-    }
-
-    function fetchPlatformData(platform, username) {
-        // Simulated API responses
-        const mockData = {
-            github: {
-                repos: Math.floor(Math.random() * 50) + 10,
-                commits: Math.floor(Math.random() * 200) + 50,
-                activity: Math.floor(Math.random() * 100)
-            },
-            leetcode: {
-                solved: Math.floor(Math.random() * 500) + 100,
-                rating: Math.floor(Math.random() * 2000) + 1000,
-                rank: `Top ${Math.floor(Math.random() * 20) + 1}%`,
-                streak: Math.floor(Math.random() * 30) + 1
-            },
-            tryhackme: {
-                rooms: Math.floor(Math.random() * 100) + 20,
-                points: Math.floor(Math.random() * 50000) + 10000,
-                rank: ['Beginner', 'Script Kiddie', 'Hacker', 'Elite Hacker'][Math.floor(Math.random() * 4)]
-            },
-            codeforces: {
-                rating: Math.floor(Math.random() * 2500) + 1000,
-                contests: Math.floor(Math.random() * 100) + 10,
-                rank: ['Newbie', 'Pupil', 'Specialist', 'Expert'][Math.floor(Math.random() * 4)]
-            }
-        };
-
-        // Update UI with platform data
-        setTimeout(() => {
-            updatePlatformUI(platform, mockData[platform]);
-            showNotification(`${platform} data synced!`, 'success');
-        }, 1000);
-    }
-
-    function updatePlatformUI(platform, data) {
-        const elements = {
-            github: {
-                repos: 'githubRepos',
-                commits: 'githubCommits',
-                activity: 'githubActivity',
-                activityBar: 'githubActivityBar'
-            },
-            leetcode: {
-                solved: 'leetcodeSolved',
-                rating: 'leetcodeRating',
-                rank: 'leetcodeRank',
-                streak: 'leetcodeStreak',
-                progressBar: 'leetcodeProgressBar'
-            },
-            tryhackme: {
-                rooms: 'tryhackmeRooms',
-                points: 'tryhackmePoints',
-                rank: 'tryhackmeRank',
-                streak: 'tryhackmeStreak',
-                progressBar: 'tryhackmeProgressBar'
-            },
-            codeforces: {
-                rating: 'codeforcesRating',
-                contests: 'codeforcesContests',
-                rank: 'codeforcesRank',
-                progressBar: 'codeforcesProgressBar'
-            }
-        };
-
-
-
-
-
-
-         //check forr the updated linked platform data    // check for updated linked plaatform then connect with codeflow pro
-         // ????? need modifications
-
-        if (elements[platform]) {
-            Object.entries(data).forEach(([key, value]) => {
-                const elementId = elements[platform][key];
-                if (elementId) {
-                    const element = document.getElementById(elementId);
-                    if (element) {
-                        if (key === 'activityBar' || key.includes('progressBar')) {
-                            element.style.width = `${value}%`;
-                        } else if (key === 'activity') {
-                            element.textContent = `${value}%`;
-                        } else {
-                            element.textContent = value;
-                        }
-                    }
-                }
-            });
-        }
-
-        // Update streaks in quick stats
-        if (platform === 'leetcode' && data.streak) {
-            state.streaks.leetcode = data.streak;
-            updateStreakDisplay();
-        }
-    }
-
-    // ======================
-    // STUDY SESSIONS & TIMER
-    // ======================
-    function startStudySession() {
-        const topic = document.getElementById('sessionTopic').value.trim();
-        const duration = parseInt(document.getElementById('sessionDuration').value) || 25;
-        const platform = document.getElementById('sessionPlatform').value;
-        const notes = document.getElementById('sessionNotes').value.trim();
-
-        if (!topic) {
-            showNotification('Please enter a study topic', 'error');
-            return;
-        }
-
-        if (!platform) {
-            showNotification('Please select a platform', 'error');
-            return;
-        }
-
-        // Start timer
-        state.timerDuration = duration * 60;
-        state.timerRemaining = state.timerDuration;
-        state.sessionActive = true;
-
-        // Update timer modal
-        document.getElementById('timerTopic').textContent = topic;
-        document.getElementById('timerPlatform').textContent = platform.charAt(0).toUpperCase() + platform.slice(1);
-        document.getElementById('timerDisplay').textContent = formatTime(state.timerRemaining);
-
-        // Show timer modal
-        showTimerModal();
-
-        // Start timer automatically
-        setTimeout(() => startTimer(), 1000);
-
-        showNotification('Study session started!', 'success');
-    }
-
-    function startTimer() {
-        if (state.isTimerRunning) return;
-
-        state.isTimerRunning = true;
-        document.getElementById('startTimerBtn').classList.add('hidden');
-        document.getElementById('pauseTimerBtn').classList.remove('hidden');
-
-        state.timerInterval = setInterval(() => {
-            state.timerRemaining--;
-
-            // Update display
-            document.getElementById('timerDisplay').textContent = formatTime(state.timerRemaining);
-
-            // Calculate progress
-            const progress = ((state.timerDuration - state.timerRemaining) / state.timerDuration * 100).toFixed(1);
-            document.getElementById('timerFocusPercent').textContent = `${progress}%`;
-
-            // Check if timer finished
-            if (state.timerRemaining <= 0) {
-                finishTimer();
-            }
-        }, 1000);
-    }
-
-    function pauseTimer() {
-        if (!state.isTimerRunning) return;
-
-        state.isTimerRunning = false;
-        clearInterval(state.timerInterval);
-        document.getElementById('pauseTimerBtn').classList.add('hidden');
-        document.getElementById('startTimerBtn').classList.remove('hidden');
-    }
-
-    function resetTimer() {
-        pauseTimer();
-        state.timerRemaining = state.timerDuration;
-        document.getElementById('timerDisplay').textContent = formatTime(state.timerRemaining);
-    }
-
-    function finishTimer() {
-        pauseTimer();
-
-        // Award points
-        const pointsEarned = Math.floor(state.timerDuration / 60 * 10); // 10 points per minute
-        state.user.points += pointsEarned;
         
-        // Check level up
-        checkLevelUp();
-
-        // Save session
-        const session = {
-            id: Date.now(),
-            topic: document.getElementById('sessionTopic').value.trim(),
-            platform: document.getElementById('sessionPlatform').value,
-            duration: state.timerDuration / 60,
-            points: pointsEarned,
-            date: new Date().toISOString(),
-            notes: document.getElementById('sessionNotes').value.trim()
-        };
-
-        state.sessions.unshift(session);
-        updateSessionsDisplay();
-        updateStreak();
-        updateWeeklyProgress(pointsEarned);
-
-        // Show completion message
-        showNotification(`Session completed! Earned ${pointsEarned} points!`, 'success');
-        triggerConfetti();
-
-        // Close modal after delay
-        setTimeout(() => {
-            closeTimerModal();
-            // Reset form
-            document.getElementById('sessionTopic').value = '';
-            document.getElementById('sessionNotes').value = '';
-        }, 2000);
-    }
-
-    function setDuration(minutes) {
-        document.getElementById('sessionDuration').value = minutes;
-    }
-
-    function setTimerDuration(minutes) {
-        state.timerDuration = minutes * 60;
-        state.timerRemaining = state.timerDuration;
-        document.getElementById('timerDisplay').textContent = formatTime(state.timerRemaining);
-    }
-
-    // ======================
-    // LEETCODE & TRYHACKME LOGGING
-    // ======================
-    function logLeetCode() {
-        showLeetCodeModal();
-    }
-
-    function submitLeetCode() {
-        const problem = document.getElementById('leetcodeProblem').value.trim();
-        const difficulty = document.getElementById('leetcodeDifficulty').value;
-        const time = parseInt(document.getElementById('leetcodeTime').value) || 30;
-        const notes = document.getElementById('leetcodeNotes').value.trim();
-
-        if (!problem) {
-            showNotification('Please enter problem name', 'error');
-            return;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
-
-        // Award points based on difficulty
-        const pointValues = { easy: 10, medium: 25, hard: 50 };
-        const pointsEarned = pointValues[difficulty] || 10;
-
-        state.user.points += pointsEarned;
-        updateUserStats();
-
-        // Update LeetCode stats
-        const leetcodeSolved = document.getElementById('leetcodeSolved');
-        const current = parseInt(leetcodeSolved.textContent) || 0;
-        leetcodeSolved.textContent = current + 1;
-
-        // Add to session history
-        const session = {
-            id: Date.now(),
-            topic: `LeetCode: ${problem}`,
-            platform: 'leetcode',
-            duration: time,
-            points: pointsEarned,
-            date: new Date().toISOString(),
-            notes: `${difficulty.charAt(0).toUpperCase() + difficulty.slice(1)} - ${notes}`
-        };
-
-        state.sessions.unshift(session);
-        updateSessionsDisplay();
-        updateStreak();
-        updateWeeklyProgress(pointsEarned);
-
-        showNotification(`LeetCode problem logged! +${pointsEarned} points`, 'success');
-        closeLeetCodeModal();
-        checkAchievements();
-    }
-
-    function logTryHackMe() {
-        showTryHackMeModal();
-    }
-
-    function submitTryHackMe() {
-        const room = document.getElementById('thmRoom').value.trim();
-        const difficulty = document.getElementById('thmDifficulty').value;
-        const time = parseInt(document.getElementById('thmTime').value) || 60;
-        const progress = parseInt(document.getElementById('thmProgress').value) || 100;
-
-        if (!room) {
-            showNotification('Please enter room name', 'error');
-            return;
-        }
-
-        // Award points
-        const pointValues = { easy: 20, medium: 40, hard: 75, insane: 150 };
-        const basePoints = pointValues[difficulty] || 20;
-        const pointsEarned = Math.floor(basePoints * (progress / 100));
-
-        state.user.points += pointsEarned;
-        updateUserStats();
-
-        // Update TryHackMe stats
-        const thmRooms = document.getElementById('tryhackmeRooms');
-        const current = parseInt(thmRooms.textContent) || 0;
-        thmRooms.textContent = current + 1;
-
-        // Add to session history
-        const session = {
-            id: Date.now(),
-            topic: `TryHackMe: ${room}`,
-            platform: 'tryhackme',
-            duration: time,
-            points: pointsEarned,
-            date: new Date().toISOString(),
-            notes: `${difficulty.charAt(0).toUpperCase() + difficulty.slice(1)} - ${progress}% complete`
-        };
-
-        state.sessions.unshift(session);
-        updateSessionsDisplay();
-        updateStreak();
-        updateWeeklyProgress(pointsEarned);
-
-        showNotification(`TryHackMe room logged! +${pointsEarned} points`, 'success');
-        closeTryHackMeModal();
-        checkAchievements();
-    }
-
-    // ======================
-    // STREAKS & CALENDAR
-    // ======================
-    function updateStreak() {
-        const today = new Date().toISOString().split('T')[0];
         
-        // Check if already logged today
-        if (!state.streaks.calendar.includes(today)) {
-            state.streaks.calendar.push(today);
-            state.streaks.overall++;
-            
-            // Update platform streaks if sessions exist today
-            const todaySessions = state.sessions.filter(s => 
-                s.date.startsWith(today) && s.platform
-            );
-            
-            todaySessions.forEach(session => {
-                if (session.platform === 'leetcode') state.streaks.leetcode++;
-                if (session.platform === 'tryhackme') state.streaks.tryhackme++;
-            });
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #f8fafc;
+            min-height: 100vh;
         }
 
-        updateStreakDisplay();
-        generateStreakCalendar();
-    }
-
-    function generateStreakCalendar() {
-        const container = document.getElementById('streakCalendar');
-        container.innerHTML = '';
-
-        // Generate last 49 days (7 weeks)
-        for (let i = 48; i >= 0; i--) {
-            const date = new Date();
-            date.setDate(date.getDate() - i);
-            const dateStr = date.toISOString().split('T')[0];
-            
-            const dot = document.createElement('div');
-            dot.className = 'streak-dot';
-            
-            if (state.streaks.calendar.includes(dateStr)) {
-                dot.classList.add('active');
-                
-                // Check if today
-                const today = new Date().toISOString().split('T')[0];
-                if (dateStr === today) {
-                    dot.classList.add('today');
-                }
-            } else {
-                dot.classList.add('inactive');
-            }
-            
-            container.appendChild(dot);
+        .glass-effect {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
         }
 
-        // Update streak displays
-        document.getElementById('mainStreak').textContent = `${state.streaks.overall} days`;
-        document.getElementById('leetcodeStreak').textContent = `${state.streaks.leetcode} days`;
-        document.getElementById('tryhackmeStreak').textContent = `${state.streaks.tryhackme} days`;
-        document.getElementById('currentStreak').textContent = `${state.streaks.overall} days`;
-    }
-
-    // ======================
-    // ACHIEVEMENTS
-    // ======================
-    function initAchievements() {
-        state.achievements = [
-            { id: 1, name: 'First Steps', description: 'Complete your first study session', icon: 'fa-rocket', unlocked: false, criteria: { type: 'sessions', value: 1 } },
-            { id: 2, name: 'LeetCode Novice', description: 'Solve 10 LeetCode problems', icon: 'fa-leetcode', unlocked: false, criteria: { type: 'leetcode', value: 10 } },
-            { id: 3, name: 'Hacker Initiate', description: 'Complete 5 TryHackMe rooms', icon: 'fa-shield-alt', unlocked: false, criteria: { type: 'tryhackme', value: 5 } },
-            { id: 4, name: 'Week Warrior', description: 'Maintain a 7-day streak', icon: 'fa-fire', unlocked: false, criteria: { type: 'streak', value: 7 } },
-            { id: 5, name: 'Point Master', description: 'Earn 1000 points', icon: 'fa-trophy', unlocked: false, criteria: { type: 'points', value: 1000 } },
-            { id: 6, name: 'Platform Explorer', description: 'Connect all 4 platforms', icon: 'fa-plug', unlocked: false, criteria: { type: 'platforms', value: 4 } },
-            { id: 7, name: 'Marathon Runner', description: 'Study for 10 hours total', icon: 'fa-running', unlocked: false, criteria: { type: 'hours', value: 10 } },
-            { id: 8, name: 'Code Master', description: 'Reach Level 10', icon: 'fa-crown', unlocked: false, criteria: { type: 'level', value: 10 } }
-        ];
-
-        // Load unlocked achievements from storage
-        const saved = localStorage.getItem('codeflow_achievements');
-        if (saved) {
-            const unlocked = JSON.parse(saved);
-            state.achievements.forEach(achievement => {
-                if (unlocked.includes(achievement.id)) {
-                    achievement.unlocked = true;
-                }
-            });
+        .gradient-primary {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
         }
 
-        renderAchievements();
-    }
-
-    function checkAchievements() {
-        let unlockedNew = false;
-        
-        state.achievements.forEach(achievement => {
-            if (!achievement.unlocked) {
-                let conditionMet = false;
-                
-                switch (achievement.criteria.type) {
-                    case 'sessions':
-                        conditionMet = state.sessions.length >= achievement.criteria.value;
-                        break;
-                    case 'leetcode':
-                        const leetcodeCount = state.sessions.filter(s => s.platform === 'leetcode').length;
-                        conditionMet = leetcodeCount >= achievement.criteria.value;
-                        break;
-                    case 'tryhackme':
-                        const thmCount = state.sessions.filter(s => s.platform === 'tryhackme').length;
-                        conditionMet = thmCount >= achievement.criteria.value;
-                        break;
-                    case 'streak':
-                        conditionMet = state.streaks.overall >= achievement.criteria.value;
-                        break;
-                    case 'points':
-                        conditionMet = state.user.points >= achievement.criteria.value;
-                        break;
-                    case 'platforms':
-                        const platformCount = Object.keys(state.user.platforms || {}).length;
-                        conditionMet = platformCount >= achievement.criteria.value;
-                        break;
-                    case 'hours':
-                        const totalHours = state.sessions.reduce((sum, session) => sum + (session.duration || 0), 0) / 60;
-                        conditionMet = totalHours >= achievement.criteria.value;
-                        break;
-                    case 'level':
-                        conditionMet = state.user.level >= achievement.criteria.value;
-                        break;
-                }
-                
-                if (conditionMet) {
-                    achievement.unlocked = true;
-                    unlockedNew = true;
-                    
-                    // Save to storage
-                    const unlockedIds = state.achievements
-                        .filter(a => a.unlocked)
-                        .map(a => a.id);
-                    localStorage.setItem('codeflow_achievements', JSON.stringify(unlockedIds));
-                    
-                    // Show notification
-                    showNotification(`Achievement unlocked: ${achievement.name}!`, 'success');
-                    triggerConfetti();
-                }
-            }
-        });
-        
-        if (unlockedNew) {
-            renderAchievements();
+        .gradient-success {
+            background: linear-gradient(135deg, var(--success) 0%, #34d399 100%);
         }
-    }
 
-    function renderAchievements() {
-        const container = document.getElementById('achievementsGrid');
-        container.innerHTML = '';
-        
-        const unlockedCount = state.achievements.filter(a => a.unlocked).length;
-        document.getElementById('achievementsCount').textContent = `${unlockedCount} unlocked`;
-        
-        state.achievements.forEach(achievement => {
-            const card = document.createElement('div');
-            card.className = `p-4 rounded-xl border ${achievement.unlocked ? 'border-yellow-400/30 bg-yellow-400/5' : 'border-gray-700 bg-white/2'}`;
-            
-            card.innerHTML = `
-                <div class="flex items-center gap-3">
-                    <div class="w-12 h-12 ${achievement.unlocked ? 'bg-gradient-to-r from-yellow-500 to-amber-500' : 'bg-gray-800'} rounded-lg flex items-center justify-center">
-                        <i class="fas ${achievement.icon} ${achievement.unlocked ? 'text-white' : 'text-gray-400'}"></i>
-                    </div>
-                    <div class="flex-1">
-                        <h4 class="font-bold ${achievement.unlocked ? 'text-yellow-300' : 'text-gray-300'}">${achievement.name}</h4>
-                        <p class="text-sm ${achievement.unlocked ? 'text-yellow-400/80' : 'text-gray-400'}">${achievement.description}</p>
-                    </div>
-                    <div class="${achievement.unlocked ? 'text-yellow-400' : 'text-gray-600'}">
-                        <i class="fas ${achievement.unlocked ? 'fa-unlock' : 'fa-lock'}"></i>
-                    </div>
+        .gradient-warning {
+            background: linear-gradient(135deg, var(--warning) 0%, #fbbf24 100%);
+        }
+
+        .gradient-danger {
+            background: linear-gradient(135deg, var(--danger) 0%, #f87171 100%);
+        }
+
+        .gradient-info {
+            background: linear-gradient(135deg, var(--info) 0%, #60a5fa 100%);
+        }
+
+        .card-hover {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .card-hover:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            border-color: rgba(99, 102, 241, 0.5);
+        }
+
+        .platform-card {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .platform-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+        }
+
+        .leetcode-card::before { background: #FFA116; }
+        .github-card::before { background: #24292e; }
+        .tryhackme-card::before { background: #212331; }
+        .codeforces-card::before { background: #3b5998; }
+
+        .streak-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            transition: all 0.3s ease;
+        }
+
+        .streak-dot.active {
+            background: linear-gradient(135deg, #10b981, #34d399);
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+        }
+
+        .streak-dot.inactive {
+            background: #334155;
+        }
+
+        .streak-dot.today {
+            border: 2px solid #10b981;
+            background: #10b981;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .typewriter {
+            overflow: hidden;
+            border-right: 3px solid var(--primary);
+            white-space: nowrap;
+            animation: typing 3.5s steps(40, end), blink-caret .75s step-end infinite;
+        }
+
+        @keyframes typing {
+            from { width: 0 }
+            to { width: 100% }
+        }
+
+        @keyframes blink-caret {
+            from, to { border-color: transparent }
+            50% { border-color: var(--primary); }
+        }
+
+        .tab-active {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+        }
+
+        .level-up {
+            animation: levelUp 0.5s ease-out;
+        }
+
+        @keyframes levelUp {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+
+        .floating {
+            animation: float 6s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .glow {
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+        }
+
+        .scrollbar-thin {
+            scrollbar-width: thin;
+            scrollbar-color: #475569 #1e293b;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-track {
+            background: #1e293b;
+            border-radius: 3px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 3px;
+        }
+
+        .input-focus {
+            transition: all 0.3s ease;
+        }
+
+        .input-focus:focus {
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+            border-color: var(--primary);
+        }
+
+        .stat-card {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .badge-success {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .badge-warning {
+            background: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        .badge-danger {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .badge-info {
+            background: rgba(59, 130, 246, 0.2);
+            color: #3b82f6;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+    <!-- Welcome Modal -->
+    <div id="welcomeModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="glass-effect rounded-3xl p-8 max-w-2xl w-full text-center border border-white/10">
+            <div class="floating mb-8">
+                <div class="w-24 h-24 gradient-primary rounded-full flex items-center justify-center mx-auto">
+                    <i class="fas fa-graduation-cap text-3xl text-white"></i>
                 </div>
-            `;
-            
-            container.appendChild(card);
-        });
-    }
-
-    // ======================
-    // CHARTS
-    // ======================
-    let weeklyChart = null;
-
-    function initCharts() {
-        const ctx = document.getElementById('weeklyChart').getContext('2d');
-        
-        weeklyChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: state.weeklyProgress.labels,
-                datasets: [{
-                    label: 'Points',
-                    data: state.weeklyProgress.points,
-                    borderColor: '#6366f1',
-                    backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: false
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
-                        },
-                        ticks: {
-                            color: '#94a3b8'
-                        }
-                    },
-                    x: {
-                        grid: {
-                            display: false
-                        },
-                        ticks: {
-                            color: '#94a3b8'
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    function updateWeeklyProgress(points) {
-        const today = new Date().getDay();
-        const adjustedDay = today === 0 ? 6 : today - 1; // Convert to 0-6 where 0=Monday
-        
-        state.weeklyProgress.points[adjustedDay] += points;
-        
-        if (weeklyChart) {
-            weeklyChart.data.datasets[0].data = state.weeklyProgress.points;
-            weeklyChart.update();
-        }
-        
-        document.getElementById('weeklyPoints').textContent = `${state.weeklyProgress.points.reduce((a, b) => a + b, 0)} points`;
-    }
-
-    // ======================
-    // UI UPDATES
-    // ======================
-    function updateUserStats() {
-        if (!state.user) return;
-
-        // Update level based on points
-        const newLevel = Math.floor(state.user.points / 100) + 1;
-        if (newLevel > state.user.level) {
-            state.user.level = newLevel;
-            document.getElementById('navLevel').classList.add('level-up');
-            setTimeout(() => {
-                document.getElementById('navLevel').classList.remove('level-up');
-            }, 500);
-            showNotification(`Level up! You're now level ${newLevel}`, 'success');
-        }
-
-        // Update UI elements
-        document.getElementById('navPoints').textContent = state.user.points.toLocaleString();
-        document.getElementById('navLevel').textContent = state.user.level;
-        document.getElementById('navLevelBadge').textContent = state.user.level;
-        document.getElementById('navUserName').textContent = state.user.firstName;
-        document.getElementById('dropdownUserName').textContent = `${state.user.firstName} ${state.user.lastName}`;
-        document.getElementById('dropdownUserEmail').textContent = state.user.email;
-        document.getElementById('userGreeting').textContent = `Welcome back, ${state.user.firstName}!`;
-        
-        // Update progress bars
-        const levelProgress = (state.user.points % 100) / 100 * 100;
-        document.getElementById('userProgressBar').style.width = `${levelProgress}%`;
-        document.getElementById('levelProgressBar').style.width = `${levelProgress}%`;
-        document.getElementById('levelProgressText').textContent = `${levelProgress.toFixed(0)}%`;
-        
-        const pointsProgress = Math.min(state.user.points / 1000 * 100, 100);
-        document.getElementById('pointsProgressBar').style.width = `${pointsProgress}%`;
-        document.getElementById('pointsProgressText').textContent = `${state.user.points}/1000`;
-
-        // Save updated user
-        localStorage.setItem('codeflow_user', JSON.stringify(state.user));
-    }
-
-    function updateSessionsDisplay() {
-        const recentContainer = document.getElementById('recentSessions');
-        const historyContainer = document.getElementById('sessionHistory');
-
-        // Sort sessions by date (newest first)
-        const sortedSessions = [...state.sessions].sort((a, b) => new Date(b.date) - new Date(a.date));
-
-        // Update recent sessions (last 3)
-        recentContainer.innerHTML = '';
-        const recentSessions = sortedSessions.slice(0, 3);
-        
-        if (recentSessions.length === 0) {
-            recentContainer.innerHTML = `
-                <div class="text-center py-8 text-gray-500">
-                    <i class="fas fa-clock text-2xl mb-2 opacity-30"></i>
-                    <p class="text-sm">No sessions yet</p>
-                </div>
-            `;
-        } else {
-            recentSessions.forEach(session => {
-                const sessionEl = document.createElement('div');
-                sessionEl.className = 'flex items-center justify-between p-3 bg-white/2 rounded-lg';
-                sessionEl.innerHTML = `
-                    <div>
-                        <div class="font-medium">${session.topic.substring(0, 30)}${session.topic.length > 30 ? '...' : ''}</div>
-                        <div class="text-xs text-gray-400">${formatDate(session.date)}</div>
-                    </div>
-                    <div class="text-right">
-                        <div class="font-bold text-green-400">+${session.points}</div>
-                        <div class="text-xs text-gray-400">${session.duration} min</div>
-                    </div>
-                `;
-                recentContainer.appendChild(sessionEl);
-            });
-        }
-
-        // Update session history table
-        historyContainer.innerHTML = '';
-        if (sortedSessions.length === 0) {
-            historyContainer.innerHTML = `
-                <tr>
-                    <td colspan="6" class="py-8 text-center text-gray-500">
-                        <i class="fas fa-history text-2xl mb-2 opacity-30"></i>
-                        <p>No sessions recorded yet</p>
-                    </td>
-                </tr>
-            `;
-        } else {
-            sortedSessions.forEach(session => {
-                const row = document.createElement('tr');
-                row.className = 'border-b border-white/5 hover:bg-white/2';
-                row.innerHTML = `
-                    <td class="py-3">${formatDate(session.date)}</td>
-                    <td class="py-3 font-medium">${session.topic}</td>
-                    <td class="py-3">
-                        <span class="badge ${getPlatformBadgeClass(session.platform)}">
-                            ${session.platform}
-                        </span>
-                    </td>
-                    <td class="py-3">${session.duration} min</td>
-                    <td class="py-3 font-bold text-green-400">+${session.points}</td>
-                    <td class="py-3">
-                        <button onclick="deleteSession(${session.id})" class="text-red-400 hover:text-red-300">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </td>
-                `;
-                historyContainer.appendChild(row);
-            });
-        }
-
-        // Update today's focus time
-        const today = new Date().toISOString().split('T')[0];
-        const todayDuration = state.sessions
-            .filter(s => s.date.startsWith(today))
-            .reduce((sum, session) => sum + (session.duration || 0), 0);
-        
-        const hours = Math.floor(todayDuration / 60);
-        const minutes = todayDuration % 60;
-        document.getElementById('todayFocus').textContent = `${hours}h ${minutes}m`;
-    }
-
-    function updatePlatformDisplay(platform, username) {
-        const displayElement = document.getElementById(`${platform}UsernameDisplay`);
-        if (displayElement) {
-            displayElement.textContent = username;
-            displayElement.classList.remove('text-gray-400');
-            displayElement.classList.add('text-green-400');
-        }
-    }
-
-    // ======================
-    // VIEW MANAGEMENT
-    // ======================
-    function showWelcomeModal() {
-        document.getElementById('welcomeModal').style.display = 'flex';
-        setTimeout(() => {
-            document.getElementById('welcomeModal').style.opacity = '1';
-        }, 10);
-    }
-
-    function closeWelcomeModal() {
-        document.getElementById('welcomeModal').style.opacity = '0';
-        setTimeout(() => {
-            document.getElementById('welcomeModal').style.display = 'none';
-            showAuthScreen();
-        }, 300);
-    }
-
-    function showAuthScreen() {
-        document.getElementById('authScreen').classList.remove('hidden');
-        document.getElementById('dashboard').classList.add('hidden');
-    }
-
-    function showDashboard() {
-        document.getElementById('authScreen').classList.add('hidden');
-        document.getElementById('dashboard').classList.remove('hidden');
-        updateUserStats();
-        updateSessionsDisplay();
-        generateStreakCalendar();
-        initAchievements();
-        checkAchievements();
-    }
-
-    function showPlatformModal() {
-        document.getElementById('platformModal').classList.remove('hidden');
-    }
-
-    function closePlatformModal() {
-        document.getElementById('platformModal').classList.add('hidden');
-    }
-
-    function showTimerModal() {
-        document.getElementById('timerModal').classList.remove('hidden');
-    }
-
-    function closeTimerModal() {
-        document.getElementById('timerModal').classList.add('hidden');
-        pauseTimer();
-        state.sessionActive = false;
-    }
-
-    function showLeetCodeModal() {
-        document.getElementById('leetcodeModal').classList.remove('hidden');
-    }
-
-    function closeLeetCodeModal() {
-        document.getElementById('leetcodeModal').classList.add('hidden');
-        // Reset form
-        document.getElementById('leetcodeProblem').value = '';
-        document.getElementById('leetcodeNotes').value = '';
-    }
-
-    function showTryHackMeModal() {
-        document.getElementById('tryhackmeModal').classList.remove('hidden');
-    }
-
-    function closeTryHackMeModal() {
-        document.getElementById('tryhackmeModal').classList.add('hidden');
-        // Reset form
-        document.getElementById('thmRoom').value = '';
-    }
-
-    // ======================
-    // UTILITY FUNCTIONS
-    // ======================
-    function formatTime(seconds) {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-
-    function formatDate(dateString) {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', { 
-            month: 'short', 
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    }
-
-    function showNotification(message, type = 'info') {
-        // Create notification element
-        const notification = document.createElement('div');
-        notification.className = `fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg border transform translate-x-full transition-transform duration-300 ${
-            type === 'success' ? 'bg-green-900/90 border-green-700 text-green-100' :
-            type === 'error' ? 'bg-red-900/90 border-red-700 text-red-100' :
-            type === 'warning' ? 'bg-yellow-900/90 border-yellow-700 text-yellow-100' :
-            'bg-blue-900/90 border-blue-700 text-blue-100'
-        }`;
-        
-        notification.innerHTML = `
-            <div class="flex items-center gap-2">
-                <i class="fas ${
-                    type === 'success' ? 'fa-check-circle' :
-                    type === 'error' ? 'fa-exclamation-circle' :
-                    type === 'warning' ? 'fa-exclamation-triangle' :
-                    'fa-info-circle'
-                }"></i>
-                <span>${message}</span>
             </div>
-        `;
-        
-        document.body.appendChild(notification);
-        
-        // Animate in
-        setTimeout(() => {
-            notification.style.transform = 'translateX(0)';
-        }, 10);
-        
-        // Remove after delay
-        setTimeout(() => {
-            notification.style.transform = 'translateX(100%)';
-            setTimeout(() => {
-                document.body.removeChild(notification);
-            }, 300);
-        }, 3000);
-    }
+            
+            <h1 class="text-4xl font-bold mb-4">Welcome to CodeFlow Pro! 🚀</h1>
+            <p class="text-xl mb-8 text-gray-300">Your ultimate coding progress tracker</p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                <div class="glass-effect p-4 rounded-xl border border-white/5">
+                    <div class="w-12 h-12 gradient-primary rounded-lg flex items-center justify-center mx-auto mb-3">
+                        <i class="fas fa-trophy text-xl text-white"></i>
+                    </div>
+                    <h3 class="font-bold mb-1">Gamified Learning</h3>
+                    <p class="text-sm text-gray-400">Earn points, unlock achievements, level up</p>
+                </div>
+                <div class="glass-effect p-4 rounded-xl border border-white/5">
+                    <div class="w-12 h-12 gradient-success rounded-lg flex items-center justify-center mx-auto mb-3">
+                        <i class="fas fa-fire text-xl text-white"></i>
+                    </div>
+                    <h3 class="font-bold mb-1">Streak Tracking</h3>
+                    <p class="text-sm text-gray-400">Track your consistency across all platforms</p>
+                </div>
+                <div class="glass-effect p-4 rounded-xl border border-white/5">
+                    <div class="w-12 h-12 gradient-info rounded-lg flex items-center justify-center mx-auto mb-3">
+                        <i class="fas fa-chart-line text-xl text-white"></i>
+                    </div>
+                    <h3 class="font-bold mb-1">Real-time Stats</h3>
+                    <p class="text-sm text-gray-400">Monitor progress from multiple platforms</p>
+                </div>
+            </div>
+            
+            <button onclick="closeWelcomeModal()" class="gradient-primary text-white px-8 py-3 rounded-full text-lg font-semibold hover:opacity-90 transition-all duration-300 transform hover:scale-105">
+                Get Started <i class="fas fa-arrow-right ml-2"></i>
+            </button>
+        </div>
+    </div>
 
-    function triggerConfetti() {
-        confetti({
-            particleCount: 100,
-            spread: 70,
-            origin: { y: 0.6 },
-            colors: ['#6366f1', '#8b5cf6', '#10b981', '#f59e0b', '#3b82f6']
-        });
-    }
+    <!-- Platform Integration Modal -->
+    <div id="platformModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="glass-effect rounded-3xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-white/10">
+            <div class="flex justify-between items-center mb-8">
+                <div>
+                    <h2 class="text-2xl font-bold mb-2">Connect Your Coding Platforms</h2>
+                    <p class="text-gray-400">Add your usernames to track real progress</p>
+                </div>
+                <button onclick="closePlatformModal()" class="text-gray-400 hover:text-white text-2xl transition">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <!-- GitHub Card -->
+                <div class="glass-effect rounded-xl p-6 border border-white/5">
+                    <div class="flex items-center gap-3 mb-6">
+                        <div class="w-12 h-12 bg-gray-900 rounded-lg flex items-center justify-center">
+                            <i class="fab fa-github text-2xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-lg">GitHub</h3>
+                            <p class="text-sm text-gray-400">Track your repositories and commits</p>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">GitHub Username</label>
+                            <div class="relative">
+                                <i class="fab fa-github absolute left-3 top-3 text-gray-400"></i>
+                                <input type="text" id="githubUsername" 
+                                       class="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-4 py-3 text-white input-focus"
+                                       placeholder="e.g., octocat">
+                            </div>
+                        </div>
+                        <button onclick="connectPlatform('github')" class="w-full bg-gray-800 hover:bg-gray-700 text-white py-3 rounded-lg font-medium transition">
+                            <i class="fas fa-plug mr-2"></i> Connect GitHub
+                        </button>
+                    </div>
+                </div>
 
-    function getPlatformBadgeClass(platform) {
-        const classes = {
-            leetcode: 'badge-warning',
-            tryhackme: 'badge-danger',
-            codeforces: 'badge-info',
-            github: 'badge-success'
-        };
-        return classes[platform] || 'badge-success';
-    }
+                <!-- LeetCode Card -->
+                <div class="glass-effect rounded-xl p-6 border border-white/5">
+                    <div class="flex items-center gap-3 mb-6">
+                        <div class="w-12 h-12 gradient-warning rounded-lg flex items-center justify-center">
+                            <i class="fab fa-leetcode text-2xl text-white"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-lg">LeetCode</h3>
+                            <p class="text-sm text-gray-400">Track problems solved and streak</p>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">LeetCode Username</label>
+                            <div class="relative">
+                                <i class="fab fa-leetcode absolute left-3 top-3 text-gray-400"></i>
+                                <input type="text" id="leetcodeUsername" 
+                                       class="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-4 py-3 text-white input-focus"
+                                       placeholder="e.g., leet_user">
+                            </div>
+                        </div>
+                        <button onclick="connectPlatform('leetcode')" class="w-full gradient-warning text-white py-3 rounded-lg font-medium hover:opacity-90 transition">
+                            <i class="fas fa-plug mr-2"></i> Connect LeetCode
+                        </button>
+                    </div>
+                </div>
 
-    function loadUserData() {
-        // Load user data from localStorage
-        const savedSessions = localStorage.getItem(`codeflow_sessions_${state.user.id}`);
-        if (savedSessions) {
-            state.sessions = JSON.parse(savedSessions);
-        }
+                <!-- TryHackMe Card -->
+                <div class="glass-effect rounded-xl p-6 border border-white/5">
+                    <div class="flex items-center gap-3 mb-6">
+                        <div class="w-12 h-12 gradient-danger rounded-lg flex items-center justify-center">
+                            <i class="fas fa-shield-alt text-2xl text-white"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-lg">TryHackMe</h3>
+                            <p class="text-sm text-gray-400">Track rooms completed and ranking</p>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">TryHackMe Username</label>
+                            <div class="relative">
+                                <i class="fas fa-shield-alt absolute left-3 top-3 text-gray-400"></i>
+                                <input type="text" id="tryhackmeUsername" 
+                                       class="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-4 py-3 text-white input-focus"
+                                       placeholder="e.g., tryhackme_user">
+                            </div>
+                        </div>
+                        <button onclick="connectPlatform('tryhackme')" class="w-full gradient-danger text-white py-3 rounded-lg font-medium hover:opacity-90 transition">
+                            <i class="fas fa-plug mr-2"></i> Connect TryHackMe
+                        </button>
+                    </div>
+                </div>
 
-        const savedStreaks = localStorage.getItem(`codeflow_streaks_${state.user.id}`);
-        if (savedStreaks) {
-            state.streaks = JSON.parse(savedStreaks);
-        }
+                <!-- Codeforces Card -->
+                <div class="glass-effect rounded-xl p-6 border border-white/5">
+                    <div class="flex items-center gap-3 mb-6">
+                        <div class="w-12 h-12 gradient-info rounded-lg flex items-center justify-center">
+                            <i class="fas fa-chart-line text-2xl text-white"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-lg">Codeforces</h3>
+                            <p class="text-sm text-gray-400">Track rating and contests</p>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Codeforces Handle</label>
+                            <div class="relative">
+                                <i class="fas fa-chart-line absolute left-3 top-3 text-gray-400"></i>
+                                <input type="text" id="codeforcesUsername" 
+                                       class="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-4 py-3 text-white input-focus"
+                                       placeholder="e.g., tourist">
+                            </div>
+                        </div>
+                        <button onclick="connectPlatform('codeforces')" class="w-full gradient-info text-white py-3 rounded-lg font-medium hover:opacity-90 transition">
+                            <i class="fas fa-plug mr-2"></i> Connect Codeforces
+                        </button>
+                    </div>
+                </div>
+            </div>
 
-        const savedWeekly = localStorage.getItem(`codeflow_weekly_${state.user.id}`);
-        if (savedWeekly) {
-            state.weeklyProgress = JSON.parse(savedWeekly);
-        }
-    }
+            <div class="flex gap-3 justify-end">
+                <button onclick="closePlatformModal()" class="px-6 py-3 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition">
+                    Cancel
+                </button>
+                <button onclick="saveAllPlatforms()" class="px-6 py-3 gradient-success text-white rounded-lg hover:opacity-90 transition">
+                    <i class="fas fa-save mr-2"></i> Save All Connections
+                </button>
+            </div>
+        </div>
+    </div>
 
-    function saveUserData() {
-        // Save user data to localStorage
-        localStorage.setItem(`codeflow_sessions_${state.user.id}`, JSON.stringify(state.sessions));
-        localStorage.setItem(`codeflow_streaks_${state.user.id}`, JSON.stringify(state.streaks));
-        localStorage.setItem(`codeflow_weekly_${state.user.id}`, JSON.stringify(state.weeklyProgress));
-    }
+    <!-- Authentication Screen -->
+    <div id="authScreen" class="min-h-screen flex items-center justify-center p-4">
+        <div class="w-full max-w-md">
+            <!-- Logo & Title -->
+            <div class="text-center mb-8">
+                <div class="w-24 h-24 gradient-primary rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-2xl floating">
+                    <i class="fas fa-graduation-cap text-3xl text-white"></i>
+                </div>
+                <h1 class="text-4xl font-bold mb-2">CodeFlow Pro</h1>
+                <p class="text-gray-400">Level up your coding journey</p>
+            </div>
 
-    function generateDemoData() {
-        // Only generate demo data if no user data exists
-        if (state.sessions.length === 0 && state.user) {
-            // Generate some demo sessions
-            const platforms = ['leetcode', 'tryhackme', 'codeforces', 'github'];
-            const topics = [
-                'Array Problems Practice',
-                'Dynamic Programming Basics',
-                'Web Security Fundamentals',
-                'Data Structures Review',
-                'Algorithm Optimization',
-                'Network Protocols',
-                'System Design Basics'
-            ];
+            <!-- Auth Tabs -->
+            <div class="glass-effect rounded-2xl p-1 mb-6 border border-white/5">
+                <div class="flex">
+                    <button id="loginTabBtn" class="flex-1 py-3 rounded-xl font-semibold tab-active" onclick="switchAuthTab('login')">
+                        Sign In
+                    </button>
+                    <button id="registerTabBtn" class="flex-1 py-3 rounded-xl font-semibold text-gray-400" onclick="switchAuthTab('register')">
+                        Register
+                    </button>
+                </div>
+            </div>
 
-            for (let i = 0; i < 7; i++) {
-                const date = new Date();
-                date.setDate(date.getDate() - i);
+            <!-- Login Form -->
+            <div id="loginForm" class="glass-effect rounded-2xl p-8 border border-white/5">
+                <div class="space-y-6">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Email Address</label>
+                        <div class="relative">
+                            <i class="fas fa-envelope absolute left-3 top-3 text-gray-400"></i>
+                            <input type="email" id="loginEmail" 
+                                   class="w-full bg-gray-800 border border-gray-700 rounded-xl pl-10 pr-4 py-3 text-white input-focus"
+                                   placeholder="your.email@example.com">
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Password</label>
+                        <div class="relative">
+                            <i class="fas fa-lock absolute left-3 top-3 text-gray-400"></i>
+                            <input type="password" id="loginPassword" 
+                                   class="w-full bg-gray-800 border border-gray-700 rounded-xl pl-10 pr-4 py-3 text-white input-focus"
+                                   placeholder="••••••••">
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between">
+                        <label class="flex items-center cursor-pointer">
+                            <input type="checkbox" id="rememberMe" class="rounded bg-gray-700 border-gray-600">
+                            <span class="ml-2 text-sm">Remember me</span>
+                        </label>
+                        <button onclick="resetPassword()" class="text-sm text-blue-400 hover:text-blue-300 transition">Forgot password?</button>
+                    </div>
+
+                    <button onclick="login()" class="w-full gradient-primary text-white py-3 rounded-xl font-semibold hover:opacity-90 transition">
+                        <i class="fas fa-sign-in-alt mr-2"></i> Sign In
+                    </button>
+
+                    <div class="text-center pt-4 border-t border-gray-800">
+                        <p class="text-sm text-gray-400">Don't have an account? 
+                            <button onclick="switchAuthTab('register')" class="text-blue-400 hover:text-blue-300 transition">Sign up</button>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Register Form -->
+            <div id="registerForm" class="glass-effect rounded-2xl p-8 border border-white/5 hidden">
+                <div class="space-y-6">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">First Name</label>
+                            <input type="text" id="registerFirstName" 
+                                   class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white input-focus"
+                                   placeholder="John">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Last Name</label>
+                            <input type="text" id="registerLastName" 
+                                   class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white input-focus"
+                                   placeholder="Doe">
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Email Address</label>
+                        <input type="email" id="registerEmail" 
+                               class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white input-focus"
+                               placeholder="your.email@example.com">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Password</label>
+                        <input type="password" id="registerPassword" 
+                               class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white input-focus"
+                               placeholder="••••••••">
+                        <div class="text-xs text-gray-400 mt-1">Minimum 8 characters with letters and numbers</div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Confirm Password</label>
+                        <input type="password" id="registerConfirmPassword" 
+                               class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white input-focus"
+                               placeholder="••••••••">
+                    </div>
+
+                    <label class="flex items-center cursor-pointer">
+                        <input type="checkbox" id="acceptTerms" class="rounded bg-gray-700 border-gray-600">
+                        <span class="ml-2 text-sm">
+                            I agree to the <button type="button" onclick="showTerms()" class="text-blue-400 hover:text-blue-300">Terms</button> and <button type="button" onclick="showPrivacy()" class="text-blue-400 hover:text-blue-300">Privacy Policy</button>
+                        </span>
+                    </label>
+
+                    <button onclick="register()" class="w-full gradient-success text-white py-3 rounded-xl font-semibold hover:opacity-90 transition">
+                        <i class="fas fa-user-plus mr-2"></i> Create Account
+                    </button>
+
+                    <div class="text-center pt-4 border-t border-gray-800">
+                        <p class="text-sm text-gray-400">Already have an account? 
+                            <button onclick="switchAuthTab('login')" class="text-blue-400 hover:text-blue-300 transition">Sign in</button>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div id="dashboard" class="hidden min-h-screen">
+        <!-- Navigation -->
+        <nav class="glass-effect sticky top-0 z-40 border-b border-white/10">
+            <div class="max-w-7xl mx-auto px-4 py-3">
+                <div class="flex justify-between items-center">
+                    <!-- Logo & Brand -->
+                    <div class="flex items-center gap-3">
+                        <div class="gradient-primary p-2 rounded-lg">
+                            <i class="fas fa-graduation-cap text-xl text-white"></i>
+                        </div>
+                        <div>
+                            <h1 class="text-xl font-bold">Codehack pro</h1>
+                            <div class="text-xs text-gray-400" id="userGreeting">Welcome back!</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Quick Stats -->
+                    <div class="flex items-center gap-6">
+                        <!-- Points Display -->
+                        <div class="flex items-center gap-2 bg-white/5 px-4 py-2 rounded-lg">
+                            <div class="w-8 h-8 bg-gradient-to-r from-yellow-500 to-amber-500 rounded-lg flex items-center justify-center">
+                                <i class="fas fa-coins text-white"></i>
+                            </div>
+                            <div>
+                                <div class="text-xs opacity-80">Points</div>
+                                <div class="font-bold" id="navPoints">0</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Level Display -->
+                        <div class="flex items-center gap-2 bg-white/5 px-4 py-2 rounded-lg">
+                            <div class="w-8 h-8 gradient-primary rounded-lg flex items-center justify-center">
+                                <i class="fas fa-trophy text-white"></i>
+                            </div>
+                            <div>
+                                <div class="text-xs opacity-80">Levels</div>
+                                <div class="font-bold" id="navLevel">1</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Platform Connections -->
+                        <button onclick="openPlatformModal()" class="flex items-center gap-2 bg-white/5 hover:bg-white/10 px-4 py-2 rounded-lg transition">
+                            <i class="fas fa-plug text-blue-400"></i>
+                            <span class="hidden md:inline">Platforms</span>
+                        </button>
+                        
+                        <!-- User Menu -->
+                        <div class="relative group">
+                            <button class="flex items-center gap-2 bg-white/5 hover:bg-white/10 px-3 py-2 rounded-lg transition">
+                                <div class="w-8 h-8 gradient-primary rounded-full flex items-center justify-center">
+                                    <i class="fas fa-user text-white"></i>
+                                </div>
+                                <div class="text-left hidden md:block">
+                                    <div class="text-sm font-medium" id="navUserName">User</div>
+                                    <div class="text-xs text-gray-400">Level <span id="navLevelBadge">1</span></div>
+                                </div>
+                                <i class="fas fa-chevron-down text-xs hidden md:block"></i>
+                            </button>
+                            
+                            <div class="absolute right-0 mt-2 w-64 bg-gray-900 rounded-xl shadow-2xl border border-white/10 hidden group-hover:block">
+                                <div class="p-4 border-b border-white/10">
+                                    <div class="font-bold" id="dropdownUserName">User</div>
+                                    <div class="text-sm text-gray-400" id="dropdownUserEmail">user@example.com</div>
+                                    <div class="mt-3 flex items-center gap-2">
+                                        <div class="flex-1 h-2 bg-gray-800 rounded-full overflow-hidden">
+                                            <div id="userProgressBar" class="h-full gradient-primary rounded-full" style="width: 30%"></div>
+                                        </div>
+                                        <span class="text-xs">30%</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="p-2">
+                                    <button onclick="openPlatformModal()" class="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/5 rounded-lg">
+                                        <i class="fas fa-plug text-blue-400"></i>
+                                        <span>Platform Connections</span>
+                                    </button>
+                                    <button onclick="logout()" class="w-full flex items-center gap-2 px-3 py-2 hover:bg-red-500/10 rounded-lg text-red-400">
+                                        <i class="fas fa-sign-out-alt"></i>
+                                        <span>Logout</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <div class="max-w-7xl mx-auto p-4">
+            <!-- Quick Stats -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="glass-effect rounded-xl p-4 card-hover stat-card border border-white/5">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 gradient-primary rounded-lg flex items-center justify-center">
+                            <i class="fas fa-clock text-xl text-white"></i>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-400">Today's Focus</div>
+                            <div class="text-2xl font-bold" id="todayFocus">0h 0m</div>
+                        </div>
+                    </div>
+                </div>
                 
-                const platform = platforms[Math.floor(Math.random() * platforms.length)];
-                const session = {
-                    id: Date.now() + i,
-                    topic: topics[Math.floor(Math.random() * topics.length)],
-                    platform: platform,
-                    duration: [25, 45, 60, 90][Math.floor(Math.random() * 4)],
-                    points: [10, 25, 50, 100][Math.floor(Math.random() * 4)],
-                    date: date.toISOString(),
-                    notes: 'Demo session for testing'
-                };
-                state.sessions.push(session);
-            }
+                <div class="glass-effect rounded-xl p-4 card-hover stat-card border border-white/5">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 gradient-success rounded-lg flex items-center justify-center">
+                            <i class="fas fa-fire text-xl text-white"></i>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-400">Study Streak</div>
+                            <div class="text-2xl font-bold" id="mainStreak">0 days</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="glass-effect rounded-xl p-4 card-hover stat-card border border-white/5">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 gradient-warning rounded-lg flex items-center justify-center">
+                            <i class="fab fa-leetcode text-xl text-white"></i>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-400">LeetCode Streak</div>
+                            <div class="text-2xl font-bold" id="leetcodeStreak">0 days</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="glass-effect rounded-xl p-4 card-hover stat-card border border-white/5">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 gradient-danger rounded-lg flex items-center justify-center">
+                            <i class="fas fa-shield-alt text-xl text-white"></i>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-400">TryHackMe Streak</div>
+                            <div class="text-2xl font-bold" id="tryhackmeStreak">0 days</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-            // Generate demo streaks
-            for (let i = 0; i < 14; i++) {
-                const date = new Date();
-                date.setDate(date.getDate() - i);
-                if (Math.random() > 0.3) {
-                    state.streaks.calendar.push(date.toISOString().split('T')[0]);
-                }
-            }
-            state.streaks.overall = state.streaks.calendar.length;
-            state.streaks.leetcode = Math.floor(state.streaks.overall * 0.7);
-            state.streaks.tryhackme = Math.floor(state.streaks.overall * 0.5);
+            <!-- Main Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                <!-- Left Column: Platform Dashboard -->
+                <div class="lg:col-span-2 space-y-6">
+                    <!-- Platform Dashboard -->
+                    <div class="glass-effect rounded-2xl p-6 border border-white/5">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-xl font-bold flex items-center gap-2">
+                                <i class="fas fa-code text-blue-400"></i> Platform Dashboard
+                            </h2>
+                            <button onclick="openPlatformModal()" class="text-sm bg-white/5 hover:bg-white/10 px-3 py-1 rounded-lg transition">
+                                <i class="fas fa-cog mr-1"></i> Manage
+                            </button>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <!-- GitHub Card -->
+                            <div class="platform-card glass-effect rounded-xl p-5 border border-white/5 github-card">
+                                <div class="flex justify-between items-start mb-4">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 bg-gray-900 rounded-lg flex items-center justify-center">
+                                            <i class="fab fa-github text-xl"></i>
+                                        </div>
+                                        <div>
+                                            <h3 class="font-bold">GitHub</h3>
+                                            <div class="text-xs text-gray-400" id="githubUsernameDisplay">Not connected</div>
+                                        </div>
+                                    </div>
+                                    <button onclick="openGitHub()" class="bg-gray-800 hover:bg-gray-700 text-white px-3 py-1 rounded-lg text-sm transition">
+                                        View
+                                    </button>
+                                </div>
+                                
+                                <div class="grid grid-cols-2 gap-3 mb-4">
+                                    <div class="bg-white/5 rounded-lg p-3">
+                                        <div class="text-2xl font-bold" id="githubRepos">0</div>
+                                        <div class="text-xs text-gray-400">Repositories</div>
+                                    </div>
+                                    <div class="bg-white/5 rounded-lg p-3">
+                                        <div class="text-2xl font-bold" id="githubCommits">0</div>
+                                        <div class="text-xs text-gray-400">Commits (30d)</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="flex items-center justify-between text-sm">
+                                    <span class="text-gray-400">Activity</span>
+                                    <span id="githubActivity">0%</span>
+                                </div>
+                                <div class="h-2 bg-gray-800 rounded-full mt-1 overflow-hidden">
+                                    <div id="githubActivityBar" class="h-full bg-gray-600 rounded-full" style="width: 0%"></div>
+                                </div>
+                            </div>
 
-            // Generate weekly progress
-            state.weeklyProgress.points = state.weeklyProgress.points.map(() => 
-                Math.floor(Math.random() * 200)
-            );
+                            <!-- LeetCode Card -->
+                            <div class="platform-card glass-effect rounded-xl p-5 border border-white/5 leetcode-card">
+                                <div class="flex justify-between items-start mb-4">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 bg-gradient-to-r from-orange-500 to-amber-500 rounded-lg flex items-center justify-center">
+                                            <i class="fab fa-leetcode text-xl text-white"></i>
+                                        </div>
+                                        <div>
+                                            <h3 class="font-bold">LeetCode</h3>
+                                            <div class="text-xs text-gray-400" id="leetcodeUsernameDisplay">Not connected</div>
+                                        </div>
+                                    </div>
+                                    <button onclick="openLeetCode()" class="bg-gradient-to-r from-orange-600 to-amber-600 hover:opacity-90 text-white px-3 py-1 rounded-lg text-sm transition">
+                                        Solve
+                                    </button>
+                                </div>
+                                
+                                <div class="grid grid-cols-2 gap-3 mb-4">
+                                    <div class="bg-white/5 rounded-lg p-3">
+                                        <div class="text-2xl font-bold" id="leetcodeSolved">0</div>
+                                        <div class="text-xs text-gray-400">Solved</div>
+                                    </div>
+                                    <div class="bg-white/5 rounded-lg p-3">
+                                        <div class="text-2xl font-bold" id="leetcodeRating">0</div>
+                                        <div class="text-xs text-gray-400">Rating</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="flex items-center justify-between text-sm">
+                                    <span class="text-gray-400">Rank</span>
+                                    <span id="leetcodeRank"> Not ranked</span>
+                                </div>
+                                <div class="h-2 bg-gray-800 rounded-full mt-1 overflow-hidden">
+                                    <div id="leetcodeProgressBar" class="h-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-full" style="width: 0%"></div>
+                                </div>
+                            </div>
 
-            saveUserData();
-        }
-    }
+                            <!-- TryHackMe Card -->
+                            <div class="platform-card glass-effect rounded-xl p-5 border border-white/5 tryhackme-card">
+                                <div class="flex justify-between items-start mb-4">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 bg-gradient-to-r from-red-500 to-pink-500 rounded-lg flex items-center justify-center">
+                                            <i class="fas fa-shield-alt text-xl text-white"></i>
+                                        </div>
+                                        <div>
+                                            <h3 class="font-bold">TryHackMe</h3>
+                                            <div class="text-xs text-gray-400" id="tryhackmeUsernameDisplay">Not connected</div>
+                                        </div>
+                                    </div>
+                                    <button onclick="openTryHackMe()" class="bg-gradient-to-r from-red-600 to-pink-600 hover:opacity-90 text-white px-3 py-1 rounded-lg text-sm transition">
+                                        Practice
+                                    </button>
+                                </div>
+                                
+                                <div class="grid grid-cols-2 gap-3 mb-4">
+                                    <div class="bg-white/5 rounded-lg p-3">
+                                        <div class="text-2xl font-bold" id="tryhackmeRooms">0</div>
+                                        <div class="text-xs text-gray-400">Rooms</div>
+                                    </div>
+                                    <div class="bg-white/5 rounded-lg p-3">
+                                        <div class="text-2xl font-bold" id="tryhackmePoints">0</div>
+                                        <div class="text-xs text-gray-400">Points</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="flex items-center justify-between text-sm">
+                                    <span class="text-gray-400">Rank</span>
+                                    <span id="tryhackmeRank">Beginner</span>
+                                </div>
+                                <div class="h-2 bg-gray-800 rounded-full mt-1 overflow-hidden">
+                                    <div id="tryhackmeProgressBar" class="h-full bg-gradient-to-r from-red-500 to-pink-500 rounded-full" style="width: 0%"></div>
+                                </div>
+                            </div>
 
-    function checkLevelUp() {
-        const oldLevel = state.user.level;
-        const newLevel = Math.floor(state.user.points / 100) + 1;
-        
-        if (newLevel > oldLevel) {
-            state.user.level = newLevel;
-            showNotification(`🎉 Level Up! You reached Level ${newLevel}!`, 'success');
-            triggerConfetti();
-        }
-    }
+                            <!-- Codeforces Card -->
+                            <div class="platform-card glass-effect rounded-xl p-5 border border-white/5 codeforces-card">
+                                <div class="flex justify-between items-start mb-4">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center">
+                                            <i class="fas fa-chart-line text-xl text-white"></i>
+                                        </div>
+                                        <div>
+                                            <h3 class="font-bold">Codeforces</h3>
+                                            <div class="text-xs text-gray-400" id="codeforcesUsernameDisplay">Not connected</div>
+                                        </div>
+                                    </div>
+                                    <button onclick="openCodeforces()" class="bg-gradient-to-r from-blue-600 to-cyan-600 hover:opacity-90 text-white px-3 py-1 rounded-lg text-sm transition">
+                                        Compete
+                                    </button>
+                                </div>
+                                
+                                <div class="grid grid-cols-2 gap-3 mb-4">
+                                    <div class="bg-white/5 rounded-lg p-3">
+                                        <div class="text-2xl font-bold" id="codeforcesRating">0</div>
+                                        <div class="text-xs text-gray-400">Rating</div>
+                                    </div>
+                                    <div class="bg-white/5 rounded-lg p-3">
+                                        <div class="text-2xl font-bold" id="codeforcesContests">0</div>
+                                        <div class="text-xs text-gray-400">Contests</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="flex items-center justify-between text-sm">
+                                    <span class="text-gray-400">Rank</span>
+                                    <span id="codeforcesRank">Newbie</span>
+                                </div>
+                                <div class="h-2 bg-gray-800 rounded-full mt-1 overflow-hidden">
+                                    <div id="codeforcesProgressBar" class="h-full bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
 
-    function deleteSession(sessionId) {
-        if (confirm('Are you sure you want to delete this session?')) {
-            state.sessions = state.sessions.filter(s => s.id !== sessionId);
-            updateSessionsDisplay();
-            saveUserData();
-            showNotification('Session deleted', 'success');
-        }
-    }
+                    <!-- Study Session Starter -->
+                    <div class="glass-effect rounded-2xl p-6 border border-white/5">
+                        <h2 class="text-xl font-bold mb-6 flex items-center gap-2">
+                            <i class="fas fa-play-circle text-green-400"></i> Start Study Session
+                        </h2>
+                        
+                        <div class="space-y-6">
+                            <div>
+                                <label class="block text-sm font-medium mb-2">What are you studying?</label>
+                                <input type="text" id="sessionTopic" 
+                                       class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white input-focus"
+                                       placeholder="e.g., Array Problems, Dynamic Programming, Web Security">
+                            </div>
+                            
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium mb-2">Duration (minutes)</label>
+                                    <div class="grid grid-cols-4 gap-2 mb-2">
+                                        <button onclick="setDuration(25)" class="py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition">25</button>
+                                        <button onclick="setDuration(45)" class="py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition">45</button>
+                                        <button onclick="setDuration(60)" class="py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition">60</button>
+                                        <button onclick="setDuration(90)" class="py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition">90</button>
+                                    </div>
+                                    <input type="number" id="sessionDuration" value="25" min="1"
+                                           class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white input-focus">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium mb-2">Platform</label>
+                                    <select id="sessionPlatform" 
+                                            class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white input-focus">
+                                        <option value="">Select Platform</option>
+                                        <option value="leetcode">LeetCode</option>
+                                        <option value="tryhackme">TryHackMe</option>
+                                        <option value="codeforces">Codeforces</option>
+                                        <option value="github">GitHub</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium mb-2">Notes (Optional)</label>
+                                <textarea id="sessionNotes" rows="3"
+                                          class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white input-focus"
+                                          placeholder="What are you working on? Any specific goals?"></textarea>
+                            </div>
+                            
+                            <button onclick="startStudySession()" class="w-full gradient-success text-white px-6 py-3 rounded-xl font-semibold hover:opacity-90 transition">
+                                <i class="fas fa-play mr-2"></i> Start Session
+                            </button>
+                        </div>
+                    </div>
+                </div>
 
-    function setupEventListeners() {
-        // Platform progress slider
-        const progressSlider = document.getElementById('thmProgress');
-        if (progressSlider) {
-            progressSlider.addEventListener('input', function() {
-                document.getElementById('thmProgressValue').textContent = `${this.value}%`;
-            });
-        }
+                <!-- Right Column: Stats & Streaks -->
+                <div class="space-y-6">
+                    <!-- Weekly Progress -->
+                    <div class="glass-effect rounded-2xl p-6 border border-white/5">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="font-bold text-lg flex items-center gap-2">
+                                <i class="fas fa-chart-line text-yellow-400"></i> Weekly Progress
+                            </h3>
+                            <div class="text-sm text-gray-400" id="weeklyPoints">0 points</div>
+                        </div>
+                        
+                        <div class="mb-6">
+                            <canvas id="weeklyChart" height="200"></canvas>
+                        </div>
+                        
+                        <div class="space-y-4">
+                            <div>
+                                <div class="flex justify-between text-sm mb-1">
+                                    <span>Points Progress</span>
+                                    <span id="pointsProgressText">0/1000</span>
+                                </div>
+                                <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+                                    <div id="pointsProgressBar" class="h-full gradient-warning rounded-full" style="width: 0%"></div>
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <div class="flex justify-between text-sm mb-1">
+                                    <span>Level Progress</span>
+                                    <span id="levelProgressText">0%</span>
+                                </div>
+                                <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+                                    <div id="levelProgressBar" class="h-full gradient-primary rounded-full" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
 
-        // Auto-save user data
-        window.addEventListener('beforeunload', saveUserData);
-    }
+                    <!-- Streak Calendar -->
+                    <div class="glass-effect rounded-2xl p-6 border border-white/5">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="font-bold text-lg flex items-center gap-2">
+                                <i class="fas fa-fire text-orange-400"></i> Streak Calendar
+                            </h3>
+                            <div class="text-sm font-bold text-green-400" id="currentStreak">0 days</div>
+                        </div>
+                        
+                        <div class="grid grid-cols-7 gap-1 mb-4">
+                            <!-- Days of the week -->
+                            <div class="text-center text-xs text-gray-400">M</div>
+                            <div class="text-center text-xs text-gray-400">T</div>
+                            <div class="text-center text-xs text-gray-400">W</div>
+                            <div class="text-center text-xs text-gray-400">T</div>
+                            <div class="text-center text-xs text-gray-400">F</div>
+                            <div class="text-center text-xs text-gray-400">S</div>
+                            <div class="text-center text-xs text-gray-400">S</div>
+                            
+                            <!-- Streak dots will be populated here -->
+                            <div id="streakCalendar" class="col-span-7 grid grid-cols-7 gap-1">
+                                <!-- JavaScript will populate this -->
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-center justify-between text-sm text-gray-400">
+                            <div class="flex items-center gap-2">
+                                <div class="streak-dot inactive"></div>
+                                <span>No activity</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <div class="streak-dot active"></div>
+                                <span>Active</span>
+                            </div>
+                        </div>
+                    </div>
 
-    // ======================
-    // PUBLIC FUNCTIONS (for HTML onclick)
-    // ======================
-    window.login = login;
-    window.register = register;
-    window.switchAuthTab = switchAuthTab;
-    window.logout = logout;
-    window.connectPlatform = connectPlatform;
-    window.saveAllPlatforms = saveAllPlatforms;
-    window.openPlatformModal = showPlatformModal;
-    window.closePlatformModal = closePlatformModal;
-    window.startStudySession = startStudySession;
-    window.setDuration = setDuration;
-    window.startTimer = startTimer;
-    window.pauseTimer = pauseTimer;
-    window.resetTimer = resetTimer;
-    window.setTimerDuration = setTimerDuration;
-    window.closeTimerModal = closeTimerModal;
-    window.logLeetCode = logLeetCode;
-    window.submitLeetCode = submitLeetCode;
-    window.closeLeetCodeModal = closeLeetCodeModal;
-    window.logTryHackMe = logTryHackMe;
-    window.submitTryHackMe = submitTryHackMe;
-    window.closeTryHackMeModal = closeTryHackMeModal;
-    window.closeWelcomeModal = closeWelcomeModal;
-    window.openGitHub = () => window.open('https://github.com', '_blank');
-    window.openLeetCode = () => window.open('https://leetcode.com', '_blank');
-    window.openTryHackMe = () => window.open('https://tryhackme.com', '_blank');
-    window.openCodeforces = () => window.open('https://codeforces.com', '_blank');
-    window.resetPassword = () => showNotification('Password reset link sent to your email', 'info');
-    window.showTerms = () => showNotification('Terms and conditions modal would open here', 'info');
-    window.showPrivacy = () => showNotification('Privacy policy modal would open here', 'info');
-    window.deleteSession = deleteSession;
+                    <!-- Recent Sessions -->
+                    <div class="glass-effect rounded-2xl p-6 border border-white/5">
+                        <h3 class="font-bold text-lg mb-4 flex items-center gap-2">
+                            <i class="fas fa-history text-blue-400"></i> Recent Sessions
+                        </h3>
+                        
+                        <div id="recentSessions" class="space-y-3 max-h-64 overflow-y-auto scrollbar-thin">
+                            <div class="text-center py-8 text-gray-500">
+                                <i class="fas fa-clock text-2xl mb-2 opacity-30"></i>
+                                <p class="text-sm">No sessions yet</p>
+                            </div>
+                        </div>
+                    </div>
 
-    // Initialize the application
-    init();
-});
+                    <!-- Quick Actions -->
+                    <div class="glass-effect rounded-2xl p-6 border border-white/5">
+                        <h3 class="font-bold text-lg mb-4 flex items-center gap-2">
+                            <i class="fas fa-bolt text-purple-400"></i> Quick Actions
+                        </h3>
+                        
+                        <div class="grid grid-cols-2 gap-3">
+                            <button onclick="logLeetCode()" class="bg-gradient-to-r from-orange-500/20 to-amber-500/20 border border-orange-500/30 text-orange-400 px-3 py-2 rounded-lg hover:bg-orange-500/30 transition">
+                                <i class="fab fa-leetcode mr-2"></i>Log Problem
+                            </button>
+                            <button onclick="logTryHackMe()" class="bg-gradient-to-r from-red-500/20 to-pink-500/20 border border-red-500/30 text-red-400 px-3 py-2 rounded-lg hover:bg-red-500/30 transition">
+                                <i class="fas fa-shield-alt mr-2"></i>Log Room
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Achievements -->
+            <div class="glass-effect rounded-2xl p-6 mb-6 border border-white/5">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold flex items-center gap-2">
+                        <i class="fas fa-trophy text-yellow-400"></i> Achievements
+                    </h2>
+                    <div class="text-sm text-gray-400" id="achievementsCount">0 unlocked</div>
+                </div>
+                
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="achievementsGrid">
+                    <!-- Achievements will be populated by JavaScript -->
+                </div>
+            </div>
+
+            <!-- Session History -->
+            <div class="glass-effect rounded-2xl p-6 border border-white/5">
+                <h2 class="text-xl font-bold mb-6 flex items-center gap-2">
+                    <i class="fas fa-list-alt text-green-400"></i> Session History
+                </h2>
+                
+                <div class="overflow-x-auto scrollbar-thin">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="text-left text-gray-400 border-b border-white/10">
+                                <th class="pb-3 font-medium">Date</th>
+                                <th class="pb-3 font-medium">Topic</th>
+                                <th class="pb-3 font-medium">Platform</th>
+                                <th class="pb-3 font-medium">Duration</th>
+                                <th class="pb-3 font-medium">Points</th>
+                                <th class="pb-3 font-medium">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sessionHistory">
+                            <tr>
+                                <td colspan="6" class="py-8 text-center text-gray-500">
+                                    <i class="fas fa-history text-2xl mb-2 opacity-30"></i>
+                                    <p>No sessions recorded yet</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Session Timer Modal -->
+    <div id="timerModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="glass-effect rounded-3xl p-8 max-w-md w-full border border-white/10">
+            <div class="text-center mb-6">
+                <div class="text-5xl font-bold font-mono mb-4 glow" id="timerDisplay">25:00</div>
+                <div class="text-lg text-gray-300 mb-2" id="timerTopic">Focus Session</div>
+                <div class="text-sm text-gray-400" id="timerPlatform">No platform</div>
+            </div>
+            
+            <div class="grid grid-cols-3 gap-3 mb-6">
+                <button onclick="startTimer()" id="startTimerBtn" class="gradient-success text-white py-3 rounded-lg hover:opacity-90 transition">
+                    <i class="fas fa-play mr-2"></i>Start
+                </button>
+                <button onclick="pauseTimer()" id="pauseTimerBtn" class="gradient-warning text-white py-3 rounded-lg hover:opacity-90 transition hidden">
+                    <i class="fas fa-pause mr-2"></i>Pause
+                </button>
+                <button onclick="resetTimer()" id="resetTimerBtn" class="gradient-danger text-white py-3 rounded-lg hover:opacity-90 transition">
+                    <i class="fas fa-stop mr-2"></i>Reset
+                </button>
+            </div>
+            
+            <div class="flex items-center justify-center gap-4 mb-6">
+                <button onclick="setTimerDuration(25)" class="px-3 py-1 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm transition">25 min</button>
+                <button onclick="setTimerDuration(45)" class="px-3 py-1 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm transition">45 min</button>
+                <button onclick="setTimerDuration(60)" class="px-3 py-1 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm transition">60 min</button>
+            </div>
+            
+            <div class="p-4 bg-white/5 rounded-xl">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <div class="text-sm text-gray-400">Session</div>
+                        <div class="text-lg font-bold" id="timerSessionCount">1/4</div>
+                    </div>
+                    <div>
+                        <div class="text-sm text-gray-400">Break</div>
+                        <div class="text-lg font-bold" id="timerBreakTime">5:00</div>
+                    </div>
+                    <div>
+                        <div class="text-sm text-gray-400">Focus</div>
+                        <div class="text-lg font-bold" id="timerFocusPercent">100%</div>
+                    </div>
+                </div>
+            </div>
+            
+            <button onclick="closeTimerModal()" class="w-full mt-6 bg-gray-800 hover:bg-gray-700 text-white py-3 rounded-lg transition">
+                Close Timer
+            </button>
+        </div>
+    </div>
+
+    <!-- LeetCode Log Modal -->
+    <div id="leetcodeModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="glass-effect rounded-3xl p-8 max-w-md w-full border border-white/10">
+            <h2 class="text-2xl font-bold mb-6 flex items-center gap-2">
+                <i class="fab fa-leetcode text-orange-400"></i> Log LeetCode Problem
+            </h2>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Problem Name</label>
+                    <input type="text" id="leetcodeProblem" 
+                           class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white input-focus"
+                           placeholder="e.g., Two Sum">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Difficulty</label>
+                        <select id="leetcodeDifficulty" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white input-focus">
+                            <option value="easy">Easy</option>
+                            <option value="medium">Medium</option>
+                            <option value="hard">Hard</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Time (min)</label>
+                        <input type="number" id="leetcodeTime" value="30" min="1"
+                               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white input-focus">
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium mb-2">Notes</label>
+                    <textarea id="leetcodeNotes" rows="2"
+                              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white input-focus"
+                              placeholder="Any insights or challenges?"></textarea>
+                </div>
+            </div>
+
+            <div class="flex gap-2 mt-8">
+                <button onclick="submitLeetCode()" class="flex-1 gradient-warning text-white px-6 py-3 rounded-lg hover:opacity-90 font-semibold">
+                    <i class="fas fa-check mr-2"></i>Submit
+                </button>
+                <button onclick="closeLeetCodeModal()" class="flex-1 bg-gray-800 hover:bg-gray-700 text-white px-6 py-3 rounded-lg font-semibold">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TryHackMe Log Modal -->
+    <div id="tryhackmeModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="glass-effect rounded-3xl p-8 max-w-md w-full border border-white/10">
+            <h2 class="text-2xl font-bold mb-6 flex items-center gap-2">
+                <i class="fas fa-shield-alt text-red-400"></i> Log TryHackMe Room
+            </h2>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Room Name</label>
+                    <input type="text" id="thmRoom" 
+                           class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white input-focus"
+                           placeholder="e.g., Introductory Networking">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Difficulty</label>
+                        <select id="thmDifficulty" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white input-focus">
+                            <option value="easy">Easy</option>
+                            <option value="medium">Medium</option>
+                            <option value="hard">Hard</option>
+                            <option value="insane">Insane</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Time (min)</label>
+                        <input type="number" id="thmTime" value="60" min="1"
+                               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white input-focus">
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium mb-2">Progress (%)</label>
+                    <input type="range" id="thmProgress" min="0" max="100" value="100"
+                           class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                    <div class="flex justify-between text-sm text-gray-400">
+                        <span>0%</span>
+                        <span id="thmProgressValue">100%</span>
+                        <span>100%</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex gap-2 mt-8">
+                <button onclick="submitTryHackMe()" class="flex-1 gradient-danger text-white px-6 py-3 rounded-lg hover:opacity-90 font-semibold">
+                    <i class="fas fa-check mr-2"></i>Submit
+                </button>
+                <button onclick="closeTryHackMeModal()" class="flex-1 bg-gray-800 hover:bg-gray-700 text-white px-6 py-3 rounded-lg font-semibold">
+                    Cancel
+                </button>
+            </div>
+        </div>
+
+    </div>
+    
+    <script src="script.js"></script>
+
+    </body>
+    </html>
